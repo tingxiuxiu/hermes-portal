@@ -70,7 +70,7 @@ data class ScrollSearchRequest(
 
     // 方向：up, down, left, right
     val direction: String = "down",
-    val maxRetries: Int = 10
+    val maxRetries: Int = 5
 )
 
 @Serializable
@@ -84,7 +84,7 @@ data class FoundNodeInfo(
 
 @Serializable
 data class UiNodeJson(
-    val index: Int,
+    val key: String,
     val text: String? = null,
     val resourceId: String? = null,
     val className: String? = null,
@@ -112,4 +112,11 @@ data class NodeBounds(
     val top: Int,
     val right: Int,
     val bottom: Int
+)
+
+@Serializable
+data class NotificationTriggerRequest(
+    val title: String? = null,
+    val content: String? = null,
+    val durationSeconds: Long? = null
 )

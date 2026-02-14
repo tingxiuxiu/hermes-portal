@@ -1,8 +1,10 @@
 package com.hermes.portal
 
+import android.content.Context
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -14,14 +16,17 @@ import android.util.Log
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
+import android.view.accessibility.AccessibilityWindowInfo
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CompletableFuture
 import androidx.core.util.size
 
-class HermesAccessibilityService : AccessibilityService() {
+@SuppressLint("AccessibilityPolicy")
+class HermesAccessibilityService() : AccessibilityService() {
+
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var TAG = "HermesAccessibilityService"
     companion object {
+        private var TAG = "HermesAccessibilityService"
         var instance: HermesAccessibilityService? = null
         // 高效监测：原子计数器，窗口变化即自增
         val windowStateId = AtomicLong(0)
@@ -53,32 +58,82 @@ class HermesAccessibilityService : AccessibilityService() {
 
     // 获取屏幕 json
     fun getJsonHierarchy(displayId: Int): UiNodeJson? {
-        // 找到对应屏幕的窗口
-        val targetWindow = windows.find { it.displayId == displayId }
-        val root = targetWindow?.root ?: if (displayId == 0) rootInActiveWindow else null
+        val allWindows = windowsOnAllDisplays
         
-        return root?.let { 
-            val result = nodeToJson(it, 0)
-            // 记得回收根节点
-            // it.recycle() // 取决于你的 Android 版本和 root 获取方式
-            result
+        val childrenList = mutableListOf<UiNodeJson>()
+        
+        for (i in 0 until allWindows.size) {
+            val mDisplayId = allWindows.keyAt(i)
+            val windows = allWindows.valueAt(i)
+            
+            if (mDisplayId == displayId) {
+                Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
+                var windowIndex = 1
+                for (window in windows) {
+                    if (window.displayId == displayId) {
+                        val rootNode = window.root
+                        if (rootNode != null) {
+                            childrenList.add(nodeToJson(rootNode, "$i-$windowIndex"))
+                            windowIndex++
+                        }
+                    }
+                }
+                
+                if (childrenList.isEmpty()) {
+                    Log.e(TAG, "No windows found on display $displayId")
+                    return null
+                }
+                break
+            }
         }
+        
+        return UiNodeJson(
+            key = "root",
+            text = null,
+            resourceId = null,
+            className = "hierarchy",
+            packageName = null,
+            contentDesc = null,
+            bounds = NodeBounds(0, 0, 0, 0),
+            visible = true,
+            checkable = false,
+            checked = false,
+            clickable = false,
+            enabled = true,
+            focusable = false,
+            focused = false,
+            scrollable = false,
+            longClickable = false,
+            password = false,
+            selected = false,
+            drawingOrder = 0,
+            children = childrenList
+        )
     }
 
-    private fun nodeToJson(node: AccessibilityNodeInfo, index: Int): UiNodeJson {
+    private fun nodeToJson(node: AccessibilityNodeInfo, key: String): UiNodeJson {
         val rect = Rect()
         node.getBoundsInScreen(rect)
 
         val childrenList = mutableListOf<UiNodeJson>()
         for (i in 0 until node.childCount) {
             node.getChild(i)?.let { child ->
-                childrenList.add(nodeToJson(child, i))
-                child.recycle() // 重要：递归过程中回收子节点，防止内存溢出
+                val childKey = "$key-$i"
+                childrenList.add(nodeToJson(child, childKey))
+                // child.recycle() // 重要：递归过程中回收子节点，防止内存溢出
             }
         }
 
+        val isChecked = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val state = node.stateDescription?.toString()?.lowercase()
+            state == "checked" || state == "selected" || state == "on"
+        } else {
+            @Suppress("DEPRECATION")
+            node.isChecked
+        }
+
         return UiNodeJson(
-            index = index,
+            key = key,
             text = node.text?.toString(),
             resourceId = node.viewIdResourceName,
             className = node.className?.toString(),
@@ -87,7 +142,7 @@ class HermesAccessibilityService : AccessibilityService() {
             bounds = NodeBounds(rect.left, rect.top, rect.right, rect.bottom),
             visible = node.isVisibleToUser,
             checkable = node.isCheckable,
-            checked = node.isChecked,
+            checked = isChecked,
             clickable = node.isClickable,
             enabled = node.isEnabled,
             focusable = node.isFocusable,
@@ -104,34 +159,39 @@ class HermesAccessibilityService : AccessibilityService() {
     /**
      * 根据指定屏幕获取元素树
      */
-    fun getXmlForDisplay(displayId: Int): String {
-        // 获取所有屏幕的窗口信息
+    fun getXmlHierarchy(displayId: Int): String? {
         val allWindows = windowsOnAllDisplays
+        
+        var foundDisplay = false
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\" ?>\n")
-        sb.append("<hierarchy rotation=\"$displayId\">\n")
-        // 按屏幕 ID 分组
+        sb.append("<hierarchy rotation=\"$displayId\" key=\"0\">\n")
+        
         for (i in 0 until allWindows.size) {
             val mDisplayId = allWindows.keyAt(i)
             val windows = allWindows.valueAt(i)
-            Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
+            
             if (mDisplayId == displayId) {
-                // 查找指定屏幕的窗口
+                foundDisplay = true
+                Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
+                
+                var windowIndex = 1
                 for (window in windows) {
                     if (window.displayId == displayId) {
                         val rootNode = window.root
-                        serializeNode(rootNode, sb, 0)
-                        rootNode.recycle()
+                        if (rootNode != null) {
+                            serializeNode(rootNode, sb, "$i-$windowIndex")
+                            windowIndex++
+                        }
                     }
                 }
-                val windowsOnDisplay = allWindows.get(displayId)
-                if (windowsOnDisplay.isNullOrEmpty()) {
-                    return "<error>No windows found on display $displayId</error>"
-                }
+                break
             }
         }
+        
         sb.append("</hierarchy>")
-        return sb.toString()
+        
+        return if (foundDisplay) sb.toString() else null
     }
 
     private fun appendAttribute(sb: StringBuilder, name: String, value: String) {
@@ -143,7 +203,7 @@ class HermesAccessibilityService : AccessibilityService() {
         sb.append("$name=\"$escapedValue\" ")
     }
 
-    private fun serializeNode(node: AccessibilityNodeInfo, sb: StringBuilder, index: Int) {
+    private fun serializeNode(node: AccessibilityNodeInfo, sb: StringBuilder, key: String) {
         // 1. 创建 Rect 实例
         val bounds = Rect()
         // 2. 将节点的坐标填充到 bounds 对象中
@@ -152,9 +212,17 @@ class HermesAccessibilityService : AccessibilityService() {
         // 格式化类名（去除包名，只留简名）
         val className = node.className?: "node"
 
+        val isChecked = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val state = node.stateDescription?.toString()?.lowercase()
+            state == "checked" || state == "selected" || state == "on"
+        } else {
+            @Suppress("DEPRECATION")
+            node.isChecked
+        }
+
         sb.append("<$className ")
         // 映射所有标准属性
-        appendAttribute(sb, "index", index.toString())
+        appendAttribute(sb, "key", key)
         // 关键点：bounds 格式 left,top,right,bottom
         appendAttribute(sb, "bounds", "${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}")
         appendAttribute(sb, "text", node.text?.toString() ?: "")
@@ -163,7 +231,7 @@ class HermesAccessibilityService : AccessibilityService() {
         appendAttribute(sb, "class", node.className?.toString() ?: "")
         appendAttribute(sb, "visible", node.isVisibleToUser.toString())
         appendAttribute(sb, "checkable", node.isCheckable.toString())
-        appendAttribute(sb, "checked", node.isChecked.toString())
+        appendAttribute(sb, "checked", isChecked.toString())
         appendAttribute(sb, "selected", node.isSelected.toString())
         appendAttribute(sb, "enabled", node.isEnabled.toString())
         appendAttribute(sb, "clickable", node.isClickable.toString())
@@ -181,9 +249,10 @@ class HermesAccessibilityService : AccessibilityService() {
             for (i in 0 until node.childCount) {
                 val child = node.getChild(i)
                 if (child != null) {
-                    serializeNode(child, sb, i)
+                    val childIndex = "$key-$i"
+                    serializeNode(child, sb, childIndex)
                     // 注意：获取后的 child 需要释放以避免内存泄漏
-                    child.recycle()
+                    // child.recycle()
                 }
             }
             sb.append("  </$className>\n")
@@ -550,5 +619,48 @@ class HermesAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e("HermesAccessibilityService", "Error capturing screen: ${e.message}", e)
         }
+    }
+
+    /**
+     * 获取所有“非应用层”的窗口信息（通常包含通知、Toast、系统弹窗）
+     */
+    fun getNotificationWindowsJson(): List<UiNodeJson> {
+        val resultList = mutableListOf<UiNodeJson>()
+
+        // 获取所有窗口
+        val allWindows = windows
+
+        // 过滤逻辑修正：
+        // 在无障碍服务看来，Toast、Heads-up 通知、音量调节条等都属于 TYPE_SYSTEM
+        val notificationWindows = allWindows.filter { window ->
+            val type = window.type
+            val pkg = window.root?.packageName?.toString()
+
+            // 核心修正：使用 TYPE_SYSTEM
+            val isSystemWindow = type == AccessibilityWindowInfo.TYPE_SYSTEM
+
+            // 为了保险，同时也把 SystemUI (绘制通知栏的应用) 的所有窗口包含进来
+            val isSystemUiApp = pkg == "com.android.systemui"
+
+            // 或者是 Android 系统的提示 (如 Toast)
+            val isAndroidSystem = pkg == "android"
+
+            isSystemWindow || isSystemUiApp || isAndroidSystem
+        }
+
+        // 遍历每一个符合条件的窗口并转为 JSON
+        notificationWindows.forEachIndexed { index, window ->
+            val root = window.root
+            if (root != null) {
+                // 使用 "win-{索引}" 作为根 Key，避免与主应用的 Key 冲突
+                val nodeJson = nodeToJson(root, "win-${index + 1}")
+                resultList.add(nodeJson)
+
+                // 注意：window.root 获取的节点通常不需要手动 recycle，
+                // 但如果你进行了大量操作，调用 root.recycle() 是个好习惯。
+            }
+        }
+
+        return resultList
     }
 }

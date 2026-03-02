@@ -38,7 +38,7 @@ class HermesHttpServer(private val context: Context) {
     }
     
     private val notificationHelper by lazy { NotificationHelper(context) }
-    private var server: ApplicationEngine? = null
+    private var server: EmbeddedServer<CIOApplicationEngine, CIOApplicationEngine.Configuration>? = null
 
     fun start() {
         if (server != null) {

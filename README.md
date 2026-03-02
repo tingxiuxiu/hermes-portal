@@ -540,6 +540,25 @@ adb shell netstat -tuln | grep 8089
 
 ---
 
+## 🧪 UI Automator Test
+
+### Run Tests
+```bash
+adb shell am instrument -r -w -e class com.hermes.portal.AutomatorServerTest#runAutomatorServer com.hermes.portal.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+### Test Commands
+```bash
+# Start server
+adb shell content query --uri content://com.hermes.portal.provider/start-service
+
+# Capture screenshot
+adb shell content query --uri content://com.hermes.portal.provider/screenshot
+
+# Stop server
+adb shell content query --uri content://com.hermes.portal.provider/stop-service
+```
+
 ## 🤝 Contributing
 
 1. Fork the repository

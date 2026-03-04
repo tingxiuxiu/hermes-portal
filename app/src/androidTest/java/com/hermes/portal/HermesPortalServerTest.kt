@@ -24,9 +24,9 @@ class HermesPortalServerTest {
         
         Log.d(TAG, "Starting HermesPortalServerTest")
         
-        // Pull port from instrumentation arguments, default to 9080
-        val portStr = args.getString("port", "9080")
-        val port = portStr.toIntOrNull() ?: 9080
+        // Pull port from instrumentation arguments, default to 9081
+        val portStr = args.getString("port", "9081")
+        val port = portStr.toIntOrNull() ?: 9081
         
         Log.d(TAG, "Using port: $port")
 

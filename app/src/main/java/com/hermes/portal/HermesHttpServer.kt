@@ -46,7 +46,7 @@ class HermesHttpServer(private val context: Context) {
             return
         }
         
-        server = embeddedServer(CIO, port = 8089) {
+        server = embeddedServer(CIO, port = 9080) {
             install(ContentNegotiation) {
                 json(Json {
                     prettyPrint = true

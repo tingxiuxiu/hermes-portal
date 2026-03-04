@@ -19,7 +19,7 @@
 
 ## 📖 Overview
 
-Hermes Portal is an Android application that provides a RESTful HTTP API for UI test automation through Android Accessibility Service. It enables automated testing frameworks to interact with Android devices programmatically, including gestures, text input, screen capture, and UI hierarchy inspection.
+Hermes Portal is an Android application that provides a RESTful HTTP API for UI test automation. It supports two modes of operation: Android Accessibility Service and UI Automator (for environments where accessibility service is not available, such as some automotive systems). It enables automated testing frameworks to interact with Android devices programmatically, including gestures, text input, screen capture, UI hierarchy inspection, and smart UI element selection.
 
 ### Key Features
 
@@ -29,7 +29,9 @@ Hermes Portal is an Android application that provides a RESTful HTTP API for UI 
 - 🌳 **UI Hierarchy** - JSON/XML format UI tree inspection
 - 🔔 **Notification Handling** - Access and trigger notifications
 - 🔍 **Smart Search** - Scroll search for UI elements
+- 🎯 **UI Selector** - Advanced UI element selection using UiSelectorModel
 - 📱 **Multi-Display Support** - Work with multiple displays
+- 🚗 **UI Automator Mode** - Support for environments without accessibility service
 
 ---
 
@@ -68,6 +70,37 @@ Hermes Portal is an Android application that provides a RESTful HTTP API for UI 
    ```
 
 5. **Test Connection**
+   ```bash
+   curl http://localhost:8089/v1/health
+   ```
+
+---
+
+### UI Automator Mode (Alternative)
+
+For environments where accessibility service is not available (e.g., some automotive systems), use UI Automator mode:
+
+1. **Build and Install Test APK**
+   ```bash
+   # Clone the repository
+   git clone https://github.com/your-repo/hermes-portal.git
+   cd hermes-portal
+   
+   # Build and install test APK
+   ./gradlew installDebugAndroidTest
+   ```
+
+2. **Run UI Automator Server**
+   ```bash
+   adb shell am instrument -r -w -e class com.hermes.portal.HermesPortalServerTest#runAutomatorServer com.hermes.portal.test/androidx.test.runner.AndroidJUnitRunner
+   ```
+
+3. **Setup Port Forwarding**
+   ```bash
+   adb forward tcp:8089 tcp:8089
+   ```
+
+4. **Test Connection**
    ```bash
    curl http://localhost:8089/v1/health
    ```
@@ -330,6 +363,83 @@ POST /v1/displays/{displayId}/search
 
 ---
 
+### UI Selector APIs
+
+#### Locate UI Element (POST)
+```http
+POST /v1/displays/{displayId}/uiselector/locator
+```
+
+**Request Body:**
+```json
+{
+  "key": "submit-button",
+  "text": "Submit",
+  "resourceId": "com.example:id/submit_button",
+  "className": "android.widget.Button",
+  "child": null
+}
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| key | string | Yes | Unique identifier for the selector |
+| text | string? | No | Text content to match |
+| resourceId | string? | No | Resource ID to match |
+| className | string? | No | Class name to match |
+| child | UiSelectorModel? | No | Nested child selector for hierarchical matching |
+
+**Response:**
+```json
+{
+  "success": true,
+  "result": {
+    "key": "submit-button-0",
+    "text": "Submit",
+    "resourceId": "com.example:id/submit_button",
+    "className": "android.widget.Button",
+    "bounds": {
+      "left": 400,
+      "top": 800,
+      "right": 680,
+      "bottom": 900
+    },
+    "clickable": true,
+    "enabled": true,
+    "focused": false,
+    "scrollable": false
+  }
+}
+```
+
+**Example:**
+```bash
+# Find element by text
+curl -X POST http://localhost:8089/v1/displays/0/uiselector/locator \
+  -H "Content-Type: application/json" \
+  -d '{"key": "my-button", "text": "Submit"}'
+
+# Find element by resourceId
+curl -X POST http://localhost:8089/v1/displays/0/uiselector/locator \
+  -H "Content-Type: application/json" \
+  -d '{"key": "my-button", "resourceId": "com.example:id/submit_button"}'
+
+# Find element with nested child selector
+curl -X POST http://localhost:8089/v1/displays/0/uiselector/locator \
+  -H "Content-Type: application/json" \
+  -d '{
+    "key": "container-button",
+    "resourceId": "com.example:id/container",
+    "child": {
+      "key": "nested-button",
+      "text": "Submit"
+    }
+  }'
+```
+
+---
+
 ### Notification APIs
 
 #### Get Notifications
@@ -384,6 +494,12 @@ app/src/main/java/com/hermes/portal/
 ├── DataModels.kt                 # Data classes for requests
 ├── ApiModels.kt                  # API response models
 └── ui/                           # UI components (Compose)
+
+app/src/androidTest/java/com/hermes/portal/
+├── HermesPortalService.kt        # UI Automator-based service
+├── TestDataModels.kt             # Data models for UI Automator mode
+├── HermesPortalServerTest.kt     # UI Automator test runner
+└── ExampleInstrumentedTest.kt    # Example instrumented test
 ```
 
 ### Technology Stack
@@ -394,6 +510,9 @@ app/src/main/java/com/hermes/portal/
 | UI Framework | Jetpack Compose |
 | HTTP Server | Ktor (CIO engine) |
 | Serialization | kotlinx.serialization |
+| UI Automation (Accessibility Mode) | Android Accessibility Service |
+| UI Automation (UI Automator Mode) | AndroidX Test UI Automator |
+| Testing Framework | JUnit 4 / AndroidX Test |
 | Min SDK | 34 (Android 14) |
 | Target SDK | 36 |
 

@@ -36,3 +36,18 @@ data class NodeBounds(
     val right: Int,
     val bottom: Int
 )
+
+@Serializable
+data class UiSelectorModel(
+    val key: String,
+    val text: String? = null,
+    val resourceId: String? = null,
+    val className: String? = null,
+    val child: UiSelectorModel? = null
+)
+
+@Serializable
+data class UiSelectorResult(
+    val success: Boolean,
+    val node: UiNodeJson? = null
+)

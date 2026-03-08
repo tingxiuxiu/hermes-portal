@@ -59,15 +59,13 @@ class HermesAccessibilityService() : AccessibilityService() {
     // 获取屏幕 json
     fun getJsonHierarchy(displayId: Int): UiNodeJson? {
         val allWindows = windowsOnAllDisplays
-        
         val childrenList = mutableListOf<UiNodeJson>()
         
         for (i in 0 until allWindows.size) {
             val mDisplayId = allWindows.keyAt(i)
             val windows = allWindows.valueAt(i)
-            
+            Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
             if (mDisplayId == displayId) {
-                Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
                 var windowIndex = 1
                 for (window in windows) {
                     if (window.displayId == displayId) {
@@ -149,34 +147,31 @@ class HermesAccessibilityService() : AccessibilityService() {
      */
     fun getXmlHierarchy(displayId: Int): String? {
         val allWindows = windowsOnAllDisplays
-        
+
         var foundDisplay = false
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\" ?>\n")
         sb.append("<hierarchy rotation=\"$displayId\" key=\"0\">\n")
-        
+
         for (i in 0 until allWindows.size) {
             val mDisplayId = allWindows.keyAt(i)
             val windows = allWindows.valueAt(i)
-            
+            Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
             if (mDisplayId == displayId) {
                 foundDisplay = true
-                Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
-                
                 var windowIndex = 1
                 for (window in windows) {
                     if (window.displayId == displayId) {
                         val rootNode = window.root
                         if (rootNode != null) {
-                            serializeNode(rootNode, sb, "d$displayId-$i-$windowIndex")
+                            serializeNode(rootNode, sb, "$i-$windowIndex")
                             windowIndex++
                         }
                     }
                 }
-                break
             }
         }
-        
+
         sb.append("</hierarchy>")
         
         return if (foundDisplay) sb.toString() else null

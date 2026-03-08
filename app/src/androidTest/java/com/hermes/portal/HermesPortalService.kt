@@ -114,7 +114,7 @@ class HermesPortalService(
                                                         childrenList.add(
                                                             nodeToJson(
                                                                 rootNode,
-                                                                "win-${childrenList.size + 1}"
+                                                                "d$displayId-${childrenList.size + 1}"
                                                             )
                                                         )
                                                     }
@@ -197,6 +197,39 @@ class HermesPortalService(
                                     HttpStatusCode.InternalServerError,
                                     ApiResponse(false, "Capture failed: ${e.message}")
                                 )
+                            }
+                        }
+
+                        route("/uiselector") {
+                            post("/locator") {
+                                Log.d(TAG, "Received /v1/displays/{displayId}/uiselector/locator request")
+                                try {
+                                    val displayId = call.parameters["displayId"]?.toIntOrNull() ?: 0
+                                    val selector = call.receive<UiSelectorModel>()
+
+                                    var foundNode: UiNodeJson? = null
+                                    uiAutomator {
+                                        for (window in windows()) {
+                                            if (window.displayId == displayId) {
+                                                val rootNode = window.root
+                                                if (rootNode != null) {
+                                                    foundNode = findNodeBySelector(rootNode, selector, displayId)
+                                                    if (foundNode != null) {
+                                                        break
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    call.respond(ApiResponse(true, foundNode))
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error in /v1/displays/{displayId}/uiselector/locator", e)
+                                    call.respond(
+                                        HttpStatusCode.InternalServerError,
+                                        ApiResponse(false, null as UiNodeJson?)
+                                    )
+                                }
                             }
                         }
 
@@ -495,5 +528,61 @@ class HermesPortalService(
         }
         sb.append("</hierarchy>")
         return if (foundDisplay) sb.toString() else null
+    }
+
+    private fun findNodeBySelector(
+        rootNode: AccessibilityNodeInfo,
+        selector: UiSelectorModel,
+        displayId: Int
+    ): UiNodeJson? {
+        val queue = mutableListOf<Pair<AccessibilityNodeInfo, String>>()
+        queue.add(Pair(rootNode, "root"))
+
+        while (queue.isNotEmpty()) {
+            val (currentNode, currentKey) = queue.removeAt(0)
+            if (matchesSelector(currentNode, selector)) {
+                if (selector.child != null) {
+                    for (i in 0 until currentNode.childCount) {
+                        val childNode = currentNode.getChild(i)
+                        if (childNode != null) {
+                            val childResult = findNodeBySelector(
+                                childNode,
+                                selector.child,
+                                displayId
+                            )
+                            if (childResult != null) {
+                                return childResult
+                            }
+                        }
+                    }
+                    return null
+                }
+                return nodeToJson(currentNode, currentKey)
+            }
+
+            for (i in 0 until currentNode.childCount) {
+                val childNode = currentNode.getChild(i)
+                if (childNode != null) {
+                    queue.add(Pair(childNode, "$currentKey-$i"))
+                }
+            }
+        }
+        return null
+    }
+
+    private fun matchesSelector(
+        node: AccessibilityNodeInfo,
+        selector: UiSelectorModel
+    ): Boolean {
+        if (selector.text != null && node.text?.toString() != selector.text) {
+            return false
+        }
+        if (selector.resourceId != null && node.viewIdResourceName != selector.resourceId) {
+            return false
+        }
+        if (selector.className != null && node.className?.toString() != selector.className) {
+            return false
+        }
+        return true
     }
 }

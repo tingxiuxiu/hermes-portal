@@ -92,8 +92,6 @@ data class UiNodeJson(
     val contentDesc: String? = null,
     val bounds: NodeBounds,
     val visible: Boolean,
-    val checkable: Boolean,
-    val checked: Boolean,
     val clickable: Boolean,
     val enabled: Boolean,
     val focusable: Boolean,

@@ -59,15 +59,13 @@ class HermesAccessibilityService() : AccessibilityService() {
     // 获取屏幕 json
     fun getJsonHierarchy(displayId: Int): UiNodeJson? {
         val allWindows = windowsOnAllDisplays
-        
         val childrenList = mutableListOf<UiNodeJson>()
         
         for (i in 0 until allWindows.size) {
             val mDisplayId = allWindows.keyAt(i)
             val windows = allWindows.valueAt(i)
-            
+            Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
             if (mDisplayId == displayId) {
-                Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
                 var windowIndex = 1
                 for (window in windows) {
                     if (window.displayId == displayId) {
@@ -96,8 +94,6 @@ class HermesAccessibilityService() : AccessibilityService() {
             contentDesc = null,
             bounds = NodeBounds(0, 0, 0, 0),
             visible = true,
-            checkable = false,
-            checked = false,
             clickable = false,
             enabled = true,
             focusable = false,
@@ -124,14 +120,6 @@ class HermesAccessibilityService() : AccessibilityService() {
             }
         }
 
-        val isChecked = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val state = node.stateDescription?.toString()?.lowercase()
-            state == "checked" || state == "selected" || state == "on"
-        } else {
-            @Suppress("DEPRECATION")
-            node.isChecked
-        }
-
         return UiNodeJson(
             key = key,
             text = node.text?.toString(),
@@ -141,8 +129,6 @@ class HermesAccessibilityService() : AccessibilityService() {
             contentDesc = node.contentDescription?.toString(),
             bounds = NodeBounds(rect.left, rect.top, rect.right, rect.bottom),
             visible = node.isVisibleToUser,
-            checkable = node.isCheckable,
-            checked = isChecked,
             clickable = node.isClickable,
             enabled = node.isEnabled,
             focusable = node.isFocusable,
@@ -161,20 +147,18 @@ class HermesAccessibilityService() : AccessibilityService() {
      */
     fun getXmlHierarchy(displayId: Int): String? {
         val allWindows = windowsOnAllDisplays
-        
+
         var foundDisplay = false
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\" ?>\n")
         sb.append("<hierarchy rotation=\"$displayId\" key=\"0\">\n")
-        
+
         for (i in 0 until allWindows.size) {
             val mDisplayId = allWindows.keyAt(i)
             val windows = allWindows.valueAt(i)
-            
+            Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
             if (mDisplayId == displayId) {
                 foundDisplay = true
-                Log.i(TAG, "--- 正在扫描屏幕 ID: $mDisplayId (窗口数量: ${windows.size}) ---")
-                
                 var windowIndex = 1
                 for (window in windows) {
                     if (window.displayId == displayId) {
@@ -185,10 +169,9 @@ class HermesAccessibilityService() : AccessibilityService() {
                         }
                     }
                 }
-                break
             }
         }
-        
+
         sb.append("</hierarchy>")
         
         return if (foundDisplay) sb.toString() else null
@@ -212,14 +195,6 @@ class HermesAccessibilityService() : AccessibilityService() {
         // 格式化类名（去除包名，只留简名）
         val className = node.className?: "node"
 
-        val isChecked = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            val state = node.stateDescription?.toString()?.lowercase()
-            state == "checked" || state == "selected" || state == "on"
-        } else {
-            @Suppress("DEPRECATION")
-            node.isChecked
-        }
-
         sb.append("<$className ")
         // 映射所有标准属性
         appendAttribute(sb, "key", key)
@@ -230,8 +205,6 @@ class HermesAccessibilityService() : AccessibilityService() {
         appendAttribute(sb, "content-desc", node.contentDescription?.toString() ?: "")
         appendAttribute(sb, "class", node.className?.toString() ?: "")
         appendAttribute(sb, "visible", node.isVisibleToUser.toString())
-        appendAttribute(sb, "checkable", node.isCheckable.toString())
-        appendAttribute(sb, "checked", isChecked.toString())
         appendAttribute(sb, "selected", node.isSelected.toString())
         appendAttribute(sb, "enabled", node.isEnabled.toString())
         appendAttribute(sb, "clickable", node.isClickable.toString())
@@ -373,7 +346,6 @@ class HermesAccessibilityService() : AccessibilityService() {
                     request.text
                 )
                 val success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                node.recycle() // 及时回收引用
                 success
             } else {
                 false
@@ -436,7 +408,6 @@ class HermesAccessibilityService() : AccessibilityService() {
                     ""
                 )
                 val success = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                node.recycle()
                 success
             } else {
                 false
@@ -470,7 +441,7 @@ class HermesAccessibilityService() : AccessibilityService() {
             if (target != null) {
                 val r = Rect().apply { target.getBoundsInScreen(this) }
                 val info = FoundNodeInfo(target.text?.toString(), target.viewIdResourceName, target.className?.toString(), NodeBounds(r.left, r.top, r.right, r.bottom), req.displayId)
-                target.recycle(); root.recycle(); return info
+                return info
             }
             // 查找滚动容器
             val container = findContainer(root, req)
@@ -478,10 +449,9 @@ class HermesAccessibilityService() : AccessibilityService() {
                 val action = if (req.direction in listOf("down", "right"))
                     AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
                 val scrolled = container.performAction(action)
-                container.recycle(); root.recycle()
                 if (!scrolled) return null
                 kotlinx.coroutines.delay(700)
-            } else { root.recycle(); return null }
+            } else { return null }
         }
         return null
     }
@@ -492,11 +462,10 @@ class HermesAccessibilityService() : AccessibilityService() {
     // 辅助：匹配节点
     private fun findMatch(node: AccessibilityNodeInfo, req: ScrollSearchRequest): AccessibilityNodeInfo? {
         if ((req.text != null && node.text?.toString() == req.text) ||
-            (req.resourceId != null && node.viewIdResourceName == req.resourceId)) return AccessibilityNodeInfo.obtain(node)
+            (req.resourceId != null && node.viewIdResourceName == req.resourceId)) return AccessibilityNodeInfo(node)
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val res = findMatch(child, req)
-            child.recycle()
             if (res != null) return res
         }
         return null
@@ -506,12 +475,11 @@ class HermesAccessibilityService() : AccessibilityService() {
     private fun findContainer(root: AccessibilityNodeInfo, req: ScrollSearchRequest): AccessibilityNodeInfo? {
         val list = mutableListOf<AccessibilityNodeInfo>()
         fun find(n: AccessibilityNodeInfo) {
-            if (n.isScrollable && (req.containerResourceId == null || n.viewIdResourceName == req.containerResourceId)) list.add(AccessibilityNodeInfo.obtain(n))
-            for (i in 0 until n.childCount) n.getChild(i)?.let { find(it); it.recycle() }
+            if (n.isScrollable && (req.containerResourceId == null || n.viewIdResourceName == req.containerResourceId)) list.add(AccessibilityNodeInfo(n))
+            for (i in 0 until n.childCount) n.getChild(i)?.let { find(it) }
         }
         find(root)
         val best = list.maxByOrNull { val r = Rect(); it.getBoundsInScreen(r); r.width() * r.height() }
-        list.forEach { if (it != best) it.recycle() }
         return best
     }
 
@@ -524,10 +492,8 @@ class HermesAccessibilityService() : AccessibilityService() {
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             if (findNodeByText(child, query)) {
-                child.recycle()
                 return true
             }
-            child.recycle()
         }
         return false
     }

@@ -38,13 +38,6 @@
             </intent-filter>
         </activity>
 
-        <!-- 声明前台服务 -->
-        <service
-            android:name=".StatusService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
-            />
-
         <!-- 声明无障碍服务 -->
         <service
             android:name=".HermesAccessibilityService"
@@ -77,6 +70,14 @@
             android:exported="true"
             android:enabled="true"
             android:grantUriPermissions="true"
+            />
+
+        <!-- 声明HTTP服务器服务 -->
+        <service
+            android:name=".HermesService"
+            android:exported="true"
+            android:enabled="true"
+            android:foregroundServiceType="dataSync"
             />
     </application>
 
